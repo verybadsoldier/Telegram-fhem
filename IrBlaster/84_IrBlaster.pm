@@ -295,20 +295,29 @@ sub IrBlaster_Set($@) {
       my $action;
       my $prefix = $hash->{PREFIX};
       my $ret;
+      my $sleepTag = "\@sleep:";
       
       foreach my $alias ( @args ) {
       
-        my $action = AttrVal($name, $prefix.$alias, undef );
-        $action = AttrVal($name, $alias, undef ) if ( ( ! defined( $action) ) && ( $alias =~ /^$prefix.+/ ) );
-      
-        if ( ! defined( $action) ) {
-          $ret = ($ret?$ret:"")."$cmd - attribute not found (".$alias.")";
-        } else {
-          my $tmp = IrBlaster_SendRequest( $hash, $action );
-          if ( $tmp ) {
-            $ret = ($ret?$ret:"").$tmp;
-          }
+        if (index($alias, $sleepTag) == 0) {
+          my $sleep = substr $alias, length($sleepTag);
+          my @args = ("sleep", $sleep);
+          push( @{ $hash->{actionQueue} }, \@args );
         }
+        else {
+          my $action = AttrVal($name, $prefix.$alias, undef );
+          $action = AttrVal($name, $alias, undef ) if ( ( ! defined( $action) ) && ( $alias =~ /^$prefix.+/ ) );
+        
+          if ( ! defined( $action) ) {
+            $ret = ($ret?$ret:"")."$cmd - attribute not found (".$alias.")";
+          } else {
+            my $tmp = IrBlaster_SendRequest( $hash, $action );
+            if ( $tmp ) {
+              $ret = ($ret?$ret:"").$tmp;
+            }
+          } 
+        }
+
       }
       return $ret if ( $ret );
       
@@ -780,8 +789,15 @@ sub IrBlaster_HU_RunQueue($)
     while ( scalar( @{ $hash->{actionQueue} } ) > 0 ) { 
       $ref  = shift @{ $hash->{actionQueue} };
       # check for excess age
-
-      if ( $hash->{TIMEOUT} == -1 ) {
+      
+      if (@$ref[0] eq "sleep") {
+        my $sleep = @$ref[1];
+        
+        RemoveInternalTimer($hash->{HU_SR_PARAMS});
+        InternalTimer(gettimeofday()+$sleep, "IrBlaster_HU_RunQueue", $hash->{HU_SR_PARAMS},0);
+        $ref = undef;
+        last;
+      } elsif ( $hash->{TIMEOUT} == -1 ) {
         $ref = undef;
       } elsif ( ((@$ref[1]) + $hash->{TIMEOUT} ) > gettimeofday() ) {
         last;
